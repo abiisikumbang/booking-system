@@ -11,24 +11,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('properties', function (Blueprint $table) {
+        Schema::create('barbers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('owner_id')->constrained('users');
             $table->string('name');
-            $table->enum('type', ['HOTEL','KOST','MEETING']);
-            $table->string('address');
-            $table->string('city');
-            $table->string('timezone')->default('Asia/Jakarta');
-            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
     }
+
 
     /**
      * Reverse the migrations.
      */
     public function down(): void
     {
-        Schema::dropIfExists('properties');
+        Schema::dropIfExists('barbers');
     }
 };

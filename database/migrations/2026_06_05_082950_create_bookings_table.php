@@ -19,7 +19,7 @@ return new class extends Migration
             $table->date('booking_date');       // Tanggal reservasi
             $table->time('booking_slot');       // Jam slot (misal 10:00, 10:30)
             $table->string('booking_code')->unique(); // Kode unik (misal: KLM-7X)
-            $table->enum('status', ['pending', 'checked_in', 'canceled'])->default('pending');
+            $table->enum('status', ['pending', 'checked_in','completed' ,'canceled'])->default('pending');
             $table->timestamps();
         });
     }

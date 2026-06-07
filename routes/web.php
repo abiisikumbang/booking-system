@@ -12,4 +12,10 @@ Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');
 
+Route::view('dashboard/barbers', 'admin.barbers')
+    ->middleware(['auth', 'verified'])
+    ->name('admin.barbers');
+
+
+
 require __DIR__.'/auth.php';

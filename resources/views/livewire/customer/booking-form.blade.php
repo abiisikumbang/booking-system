@@ -13,25 +13,28 @@ new class extends Component {
     public $selectedSlot = '';
     public $customerName = '';
     public $customerPhone = '';
+    public $currentBookingId = null;
 
     // Properti Status Alur Form
     public $bookingResult = null;
     public $bookedSlots = [];
+    public $maxDate = '';
 
     // Mengatur waktu default tanggal ke hari ini saat komponen dimuat
     public function mount()
     {
         $this->selectedDate = Carbon::today()->toDateString();
+        $this->maxDate = Carbon::today()->addDays(14)->toDateString();
     }
 
     // Definisi daftar slot waktu operasional (Fixed 30 Menit)
     public function getAvailableSlotsProperty()
     {
         return [
-            '10:00', '10:30', '11:00', '11:30', 
-            '13:00', '13:30', '14:00', '14:30', 
-            '15:00', '15:30', '16:00', '16:30', 
-            '17:00', '17:30', '19:00', '19:30', 
+            '10:00', '10:30', '11:00', '11:30',
+            '13:00', '13:30', '14:00', '14:30',
+            '15:00', '15:30', '16:00', '16:30',
+            '17:00', '17:30', '19:00', '19:30',
             '20:00', '20:30'
         ];
     }
@@ -66,14 +69,15 @@ new class extends Component {
         // Validasi input data pelanggan
         $this->validate([
             'selectedBarber' => 'required|exists:barbers,id',
-            'selectedDate' => 'required|date|after_or_equal:today',
+            'selectedDate' => 'required|date|after_or_equal:today|before_or_equal:' . $this->maxDate,
             'selectedSlot' => 'required',
             'customerName' => 'required|string|max:50',
             'customerPhone' => 'required|numeric|digits_between:10,14',
         ], [
             'required' => 'Kolom ini wajib diisi.',
             'customerPhone.numeric' => 'Nomor HP harus berupa angka.',
-            'customerPhone.digits_between' => 'Nomor HP harus terdiri dari 10-14 digit.'
+            'customerPhone.digits_between' => 'Nomor HP harus terdiri dari 10-14 digit.',
+            'selectedDate.before_or_equal' => 'Pemesanan hanya dapat dilakukan max 14 hari ke depan.',
         ]);
 
         // Proteksi ganda: Pastikan slot belum disalip orang lain tepat sebelum klik submit
@@ -103,6 +107,9 @@ new class extends Component {
             'status' => 'pending'
         ]);
 
+        //simpan id booking yang baru dibuat
+        $this->currentBookingId = $booking->id;
+
         // Tampilkan hasil sukses ke layar pelanggan
         $this->bookingResult = [
             'code' => $uniqueCode,
@@ -113,11 +120,29 @@ new class extends Component {
         ];
     }
 
-    // Ambil daftar nama barber yang aktif saat ini dari database
+    //fungsi Membatalkan booking
+    public function cancelMyBooking()
+    {
+        if ($this->currentBookingId) {
+            $booking = Booking::find($this->currentBookingId);
+
+            // Pastikan statusnya masih pending (belum di-check-in oleh admin)
+            if ($booking && $booking->status === 'pending') {
+                $booking->update(['status' => 'canceled']);
+
+                // Reset semua data agar form kembali ke awal dan memunculkan pesan sukses batal
+                session()->flash('info', 'Pemesanan Anda telah berhasil dibatalkan.');
+                $this->reset(['bookingResult', 'currentBookingId', 'selectedSlot', 'customerName', 'customerPhone']);
+                $this->checkBookedSlots();
+            }
+        }
+    }
+
+    // Ambil SEMUA daftar nama barber (aktif & tidak aktif) untuk ditampilkan di Grid Card
     public function with(): array
     {
         return [
-            'barbers' => Barber::where('is_active', true)->get()
+            'barbers' => Barber::orderBy('is_active', 'desc')->get()
         ];
     }
 }; ?>
@@ -137,47 +162,104 @@ new class extends Component {
                 </span>
             </div>
 
-            <div class="max-w-md mx-auto text-left border-t border-gray-200 dark:border-gray-700 pt-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
+            <div class="max-w-md mx-auto text-left border-t border-gray-200 dark:border-gray-700 pt-4 space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-6">
                 <div class="flex justify-between"><span>Nama Pelanggan:</span> <span class="font-semibold">{{ $bookingResult['name'] }}</span></div>
                 <div class="flex justify-between"><span>Barber Terpilih:</span> <span class="font-semibold">{{ $bookingResult['barber'] }}</span></div>
                 <div class="flex justify-between"><span>Tanggal Jadwal:</span> <span class="font-semibold">{{ $bookingResult['date'] }}</span></div>
                 <div class="flex justify-between"><span>Jam Kedatangan:</span> <span class="font-semibold text-blue-600 dark:text-blue-400">{{ $bookingResult['slot'] }} WIB</span></div>
             </div>
 
-            <button onclick="window.location.reload()" class="mt-8 px-6 py-2 bg-gray-800 text-white rounded-md text-sm hover:bg-gray-900 transition">
-                Buat Pemesanan Baru
-            </button>
+            <!-- KONTROL TOMBOL: SELESAI ATAU BATAL -->
+            <div class="flex flex-col sm:flex-row justify-center items-center gap-3 mt-8">
+                <button onclick="window.location.reload()" class="w-full sm:w-auto px-6 py-2.5 bg-gray-800 text-white rounded-md text-sm hover:bg-gray-900 transition font-medium">
+                    Selesai & Tutup
+                </button>
+
+                <!-- Tombol Batalkan Pesanan Mandiri -->
+                <button type="button"
+                        wire:click="cancelMyBooking"
+                        wire:confirm="Apakah Anda yakin ingin membatalkan pemesanan layanan pangkas rambut ini?"
+                        class="w-full sm:w-auto px-6 py-2.5 bg-red-100 text-red-700 rounded-md text-sm hover:bg-red-200 transition font-medium">
+                    Batalkan Pemesanan Ini
+                </button>
+            </div>
         </div>
     @else
         <form wire:submit.prevent="submitBooking" class="space-y-6">
+            @if (session()->has('info'))
+                <div class="p-4 bg-blue-100 text-blue-800 rounded-lg text-sm font-medium mb-4">
+                    {{ session('info') }}
+                </div>
+            @endif
             @if (session()->has('error'))
                 <div class="p-4 bg-red-100 text-red-700 rounded-lg text-sm">{{ session('error') }}</div>
             @endif
-
+            <!-- 1. Pilih Tanggal Kedatangan -->
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">1. Pilih Tanggal Kedatangan</label>
-                <input type="date" wire:model.live="selectedDate" min="{{ date('Y-m-d') }}" class="w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500">
+                <input type="date"
+                       wire:model.live="selectedDate"
+                       min="{{ date('Y-m-d') }}"
+                       max="{{ $maxDate }}"
+                       class="w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500">
                 @error('selectedDate') <span class="text-xs text-red-500 mt-1 block">{{ $message }}</span> @enderror
             </div>
 
+            <!-- 2. Pilih Barber -->
             <div>
-                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">2. Pilih Barber Terbaik Anda</label> 
-                <select wire:model.live="selectedBarber" class="w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500">
-                    <option value="">-- Silakan Pilih Barber --</option>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">2. Pilih Barber Terbaik Anda</label>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4  ">
                     @foreach($barbers as $barber)
-                        <option value="{{ $barber->id }}">{{ $barber->name }}</option>
+                        <div class="relative border-2 rounded-xl p-4 flex flex-col items-center text-center transition bg-gray-900 dark:bg-gray-750
+                            {{ $selectedBarber == $barber->id ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-gray-200 dark:border-gray-700' }}
+                            {{ !$barber->is_active ? 'opacity-50 bg-gray-50 dark:bg-gray-900' : '' }}
+                        ">
+                            <!-- Foto/Avatar Barber Menggunakan Placeholder SVG -->
+                            <div class="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center text-xl mb-3 overflow-hidden text-gray-600 dark:text-gray-300 font-bold">
+                                {{ strtoupper(substr($barber->name, 0, 2)) }}
+                            </div>
+
+                            <!-- Detail Barber -->
+                            <div class="font-bold text-gray-900 dark:text-gray-300 text-sm">{{ $barber->name }}</div>
+
+                            <!-- Status Kehadiran Barber -->
+                            <div class="text-xs mt-1 mb-4">
+                                @if($barber->is_active)
+                                    <span class="text-green-600 dark:text-green-400 font-medium">● Sedang Aktif</span>
+                                @else
+                                    <span class="text-red-500 dark:text-red-400 font-medium">✕ Sedang Tidak Aktif</span>
+                                @endif
+                            </div>
+
+                            <!-- Tombol Aksi Pilihan -->
+                            @if($barber->is_active)
+                                <button type="button"
+                                        wire:click="$set('selectedBarber', '{{ $barber->id }}')"
+                                        class="mt-auto w-full py-1.5 rounded-lg text-xs font-bold transition
+                                            {{ $selectedBarber == $barber->id ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-blue-500' }}
+                                        ">
+                                    {{ $selectedBarber == $barber->id ? 'Terpilih' : 'Pilih Barber' }}
+                                </button>
+                            @else
+                                <button type="button" disabled class="mt-auto w-full py-1.5 rounded-lg text-xs font-bold bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed">
+                                    Tidak Tersedia
+                                </button>
+                            @endif
+                        </div>
                     @endforeach
-                </select>
-                @error('selectedBarber') <span class="text-xs text-red-500 mt-1 block">{{ $message }}</span> @enderror
+                </div>
+                @error('selectedBarber') <span class="text-xs text-red-500 mt-2 block">{{ $message }}</span> @enderror
             </div>
+
 
             @if($selectedBarber && $selectedDate)
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">3. Pilih Jam Slot yang Tersedia</label> 
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">3. Pilih Jam Slot yang Tersedia</label>
                     <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         @foreach($this->availableSlots as $slot)
                             @php $isBooked = in_array($slot, $bookedSlots); @endphp
-                            <button type="button" 
+                            <button type="button"
                                 wire:click="$set('selectedSlot', '{{ $slot }}')"
                                 @if($isBooked) disabled @endif
                                 class="py-2.5 text-xs font-semibold rounded-lg border text-center transition
@@ -196,10 +278,11 @@ new class extends Component {
                 </div>
             @endif
 
+            <!-- 4. Form Input Nama & Nomor HP untuk Konfirmasi Booking -->
             @if($selectedSlot)
                 <div class="border-t border-gray-100 dark:border-gray-700 pt-4 space-y-4">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">4. Isi Identitas untuk Konfirmasi Kedatangan</label>
-                    
+
                     <div>
                         <input type="text" wire:model="customerName" placeholder="Masukkan Nama Anda" class="w-full rounded-md border-gray-300 shadow-sm dark:bg-gray-700 dark:text-gray-200 focus:ring-blue-500">
                         @error('customerName') <span class="text-xs text-red-500 mt-1 block">{{ $message }}</span> @enderror

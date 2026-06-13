@@ -130,24 +130,34 @@ new class extends Component {
                             @endif
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                           @if($booking->status === 'pending')
-                                <!-- Jika status pending, tombolnya Check-In & Batal -->
-                                <button wire:click="checkIn({{ $booking->id }})" class="mr-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition font-semibold">
-                                    Check In
-                                </button>
-                                <button wire:click="cancelBooking({{ $booking->id }})" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition">
-                                    Batal
-                                </button>
-                            @elseif($booking->status === 'checked_in')
-                                <!-- Jika pelanggan sedang dicukur, ganti jadi tombol Selesai -->
-                                <button wire:click="completeBooking({{ $booking->id }})" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition font-semibold shadow">
-                                    Bayar & Selesai
-                                </button>
-                            @else
-                                <!-- Jika status sudah 'selesai' atau 'canceled' -->
-                                <span class="text-gray-400 text-xs italic">Selesai</span>
-                            @endif
-                        </td>
+    @if($booking->status === 'pending')
+        <!-- Jika status pending, tombolnya Check-In & Batal -->
+        <button wire:click="checkIn({{ $booking->id }})" class="mr-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs transition font-semibold">
+            Check In
+        </button>
+        <button wire:click="cancelBooking({{ $booking->id }})" class="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs transition">
+            Batal
+        </button>
+
+    @elseif($booking->status === 'checked_in')
+        <!-- Jika pelanggan sedang dicukur, ganti jadi tombol Selesai -->
+        <button wire:click="completeBooking({{ $booking->id }})" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition font-semibold shadow">
+            Bayar & Selesai
+        </button>
+
+    @elseif($booking->status === 'completed' || $booking->status === 'selesai')
+        <!-- Jika pesanan memang sudah selesai (bayar & selesai) -->
+        <span class="text-green-400/80 text-xs font-medium italic">Selesai</span>
+
+    @elseif($booking->status === 'canceled' || $booking->status === 'batal')
+        <!-- Jika pesanan dibatalkan oleh admin atau sistem -->
+        <span class="text-red-400/80 text-xs font-medium italic">Dibatalkan</span>
+
+    @else
+        <!-- Antrean untuk status tidak dikenal / fallback aman -->
+        <span class="text-gray-500 text-xs italic">-</span>
+    @endif
+</td>
                     </tr>
                 @empty
                     <tr>

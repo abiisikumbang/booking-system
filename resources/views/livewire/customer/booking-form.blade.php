@@ -20,26 +20,52 @@ new class extends Component {
     public $bookedSlots = [];
     public $maxDate = '';
 
-    // Mengatur waktu default tanggal ke hari ini saat komponen dimuat
     public function mount()
     {
         $this->selectedDate = Carbon::today()->toDateString();
         $this->maxDate = Carbon::today()->addDays(14)->toDateString();
     }
 
-    // Definisi daftar slot waktu operasional (Fixed 30 Menit)
     public function getAvailableSlotsProperty()
     {
-        return [
-            '10:00', '10:30', '11:00', '11:30',
-            '13:00', '13:30', '14:00', '14:30',
-            '15:00', '15:30', '16:00', '16:30',
-            '17:00', '17:30', '19:00', '19:30',
-            '20:00', '20:30'
+        $allSlots = [
+        '10:00', '10:30', '11:00', '11:30',
+        '13:00', '13:30', '14:00', '14:30',
+        '15:00', '15:30', '16:00', '16:30',
+        '17:00', '17:30', '19:00', '19:30',
+        '20:00', '20:30'
         ];
+
+        $filteredSlots = [];
+
+        // Pastikan zona waktu mengikuti waktu lokal (Asia/Jakarta atau Asia/Medan / WIB)
+        $today = Carbon::today('Asia/Jakarta')->toDateString();
+        $currentTime = Carbon::now('Asia/Jakarta')->format('H:i');
+
+        foreach ($allSlots as $slot) {
+            // JIKA tanggal yang dipilih pelanggan adalah HARI INI...
+            if ($this->selectedDate === $today) {
+                // ...maka slot yang jamnya sudah LEWAT atau SAMA DENGAN jam sekarang akan dilewati
+                if ($slot <= $currentTime) {
+                    continue;
+                }
+            }
+
+            // Jalankan pengecekan database
+            $isBooked = \App\Models\Booking::where('booking_date', $this->selectedDate)
+                ->where('barber_id', $this->selectedBarber)
+                ->where('booking_slot', $slot)
+                ->whereIn('status', ['pending', 'checked_in', 'completed'])
+                ->exists();
+
+            $filteredSlots[] = [
+                'time' => $slot,
+                'is_booked' => $isBooked
+            ];
+        }
+        return $filteredSlots;
     }
 
-    // Setiap kali pelanggan mengubah tanggal atau memilih barber, hitung slot yang sudah terisi
     public function updated($propertyName)
     {
         if ($propertyName === 'selectedBarber' || $propertyName === 'selectedDate') {
@@ -48,7 +74,6 @@ new class extends Component {
         }
     }
 
-    // Fungsi memeriksa database untuk slot jam yang sudah dipesan orang lain
     public function checkBookedSlots()
     {
         if ($this->selectedBarber && $this->selectedDate) {
@@ -63,10 +88,9 @@ new class extends Component {
         }
     }
 
-    // Fungsi Eksekusi Pemesanan (Submit Form)
     public function submitBooking()
     {
-        // Validasi input data pelanggan
+
         $this->validate([
             'selectedBarber' => 'required|exists:barbers,id',
             'selectedDate' => 'required|date|after_or_equal:today|before_or_equal:' . $this->maxDate,
@@ -80,7 +104,6 @@ new class extends Component {
             'selectedDate.before_or_equal' => 'Pemesanan hanya dapat dilakukan max 14 hari ke depan.',
         ]);
 
-        // Proteksi ganda: Pastikan slot belum disalip orang lain tepat sebelum klik submit
         $isAlreadyBooked = Booking::where('barber_id', $this->selectedBarber)
             ->where('booking_date', $this->selectedDate)
             ->where('booking_slot', $this->selectedSlot)
@@ -93,10 +116,8 @@ new class extends Component {
             return;
         }
 
-        // Generate Kode Unik Manual (Misal: KLM-XYZ123)
         $uniqueCode = 'KLM-' . strtoupper(Str::random(6));
 
-        // Simpan ke database
         $booking = Booking::create([
             'barber_id' => $this->selectedBarber,
             'customer_name' => $this->customerName,
@@ -107,10 +128,8 @@ new class extends Component {
             'status' => 'pending'
         ]);
 
-        //simpan id booking yang baru dibuat
         $this->currentBookingId = $booking->id;
 
-        // Tampilkan hasil sukses ke layar pelanggan
         $this->bookingResult = [
             'code' => $uniqueCode,
             'name' => $this->customerName,
@@ -120,17 +139,14 @@ new class extends Component {
         ];
     }
 
-    //fungsi Membatalkan booking
     public function cancelMyBooking()
     {
         if ($this->currentBookingId) {
             $booking = Booking::find($this->currentBookingId);
 
-            // Pastikan statusnya masih pending (belum di-check-in oleh admin)
             if ($booking && $booking->status === 'pending') {
                 $booking->update(['status' => 'canceled']);
 
-                // Reset semua data agar form kembali ke awal dan memunculkan pesan sukses batal
                 session()->flash('info', 'Pemesanan Anda telah berhasil dibatalkan.');
                 $this->reset(['bookingResult', 'currentBookingId', 'selectedSlot', 'customerName', 'customerPhone']);
                 $this->checkBookedSlots();
@@ -138,7 +154,6 @@ new class extends Component {
         }
     }
 
-    // Ambil SEMUA daftar nama barber (aktif & tidak aktif) untuk ditampilkan di Grid Card
     public function with(): array
     {
         return [
@@ -258,16 +273,20 @@ new class extends Component {
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">3. Pilih Jam Slot yang Tersedia</label>
                     <div class="grid grid-cols-3 sm:grid-cols-4 gap-2">
                         @foreach($this->availableSlots as $slot)
-                            @php $isBooked = in_array($slot, $bookedSlots); @endphp
+                            {{-- Ambil nilai status booked langsung dari array backend baru --}}
+                            @php $isBooked = $slot['is_booked']; @endphp
+
                             <button type="button"
-                                wire:click="$set('selectedSlot', '{{ $slot }}')"
+                                wire:click="$set('selectedSlot', '{{ $slot['time'] }}')"
                                 @if($isBooked) disabled @endif
                                 class="py-2.5 text-xs font-semibold rounded-lg border text-center transition
-                                    {{ $selectedSlot === $slot ? 'bg-blue-600 text-white border-blue-600 shadow' : '' }}
-                                    {{ !$isBooked && $selectedSlot !== $slot ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:border-blue-500' : '' }}
+                                    {{ $selectedSlot === $slot['time'] ? 'bg-blue-600 text-white border-blue-600 shadow' : '' }}
+                                    {{ !$isBooked && $selectedSlot !== $slot['time'] ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:border-blue-500' : '' }}
                                     {{ $isBooked ? 'bg-gray-100 dark:bg-gray-900 text-gray-400 dark:text-gray-600 border-gray-200 line-through cursor-not-allowed' : '' }}
                                 ">
-                                {{ $slot }}
+                                {{-- Cetak teks jam slot --}}
+                                {{ $slot['time'] }}
+
                                 <div class="text-[9px] font-normal tracking-tight">
                                     {{ $isBooked ? 'Penuh' : 'Tersedia' }}
                                 </div>
